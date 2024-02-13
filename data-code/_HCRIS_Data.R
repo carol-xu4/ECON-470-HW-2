@@ -8,7 +8,6 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, ggplot2, dplyr, lubridate)
 
-
 # Read and combine data ---------------------------------------------------
 source('data-code/H1_HCRISv1996.R')
 source('data-code/H2_HCRISv2010.R')
@@ -31,7 +30,6 @@ final.hcris=rbind(final.hcris.v1996,final.hcris.v2010) %>%
 
 ## count of hospitals/provider_number by year
 final.hcris %>% group_by(fyear) %>% count()
-
 
 
 # Clean data --------------------------------------------------------------

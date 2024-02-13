@@ -38,7 +38,7 @@ colnames(hcris.vars)=c("variable","WKSHT_CD","LINE_NUM","CLMN_NUM","source")
 ########################################################################################
 ## Pull relevant data
 ########################################################################################
-for (i in 2010:2017) {
+for (i in 2010:2015) {
   HCRIS.alpha=read_csv(paste0("data/input/HCRIS_v2010/HospitalFY",i,"/hosp10_",i,"_ALPHA.CSV"),
                        col_names=c('RPT_REC_NUM','WKSHT_CD','LINE_NUM','CLMN_NUM','ITM_VAL_NUM'))
   HCRIS.numeric=read_csv(paste0("data/input/HCRIS_v2010/HospitalFY",i,"/hosp10_",i,"_NMRC.CSV"),
