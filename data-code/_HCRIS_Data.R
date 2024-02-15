@@ -31,7 +31,6 @@ final.hcris=rbind(final.hcris.v1996,final.hcris.v2010) %>%
 ## count of hospitals/provider_number by year
 final.hcris %>% group_by(fyear) %>% count()
 
-
 # Clean data --------------------------------------------------------------
 
 ## create count of reports by hospital fiscal year
