@@ -52,7 +52,7 @@ final.hcris <- final.hcris %>%
     price_denom = tot_discharges - mcare_discharges,
     price = price_num / price_denom)   
 
-estimated_prices_plot = ggplot(final.hcris, aes(x = as.factor(fyear), y = estimated_price)) +
+estimated_prices_plot = ggplot(final.hcris, aes(x = as.factor(fyear), y = price)) +
   geom_violin(fill = "skyblue", color = "blue", alpha = 0.6) +
   labs(
     x = "Year",
@@ -61,12 +61,49 @@ estimated_prices_plot = ggplot(final.hcris, aes(x = as.factor(fyear), y = estima
   ) +
   theme_minimal() 
 print(estimated_prices_plot)
+ggsave("estimated_prices_plot.png")
 
 # ATE ESTIMATES
+final.hcris <- final.hcris %>%
+  mutate(penalty = ifelse(price < 0, 1, 0))
+final.hcris <- final.hcris %>%
+  mutate(penalty = ifelse(is.na(penalty), 1, penalty))
+
 
 # 5 Average price among penalized vs non-penalized hospitals
+final.hcris %>% group_by(fyear) %>% 
+  filter(price_denom>10, !is.na(price_denom), 
+         price_num>0, !is.na(price_num)) %>%  
+  select(price, fyear) %>% 
+  summarize(mean_price=mean(price, na.rm=TRUE)) %>%
+  ggplot(aes(x=as.factor(fyear), y=mean_price)) + 
+  geom_line(aes(group=1)) +
+  labs(
+    x="Year",
+    y="Average Hospital Price",
+    title="Hospital Prices per Year"
+  ) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust=1))
+ggsave("avg_prices.png")
 
 # 6 Average price among treated/control groups by bed size quartiles
+quartiles <- quantile(final.hcris$beds, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE)
+final.hcris <- final.hcris %>%
+  mutate(
+    quartile_1 = ifelse(beds <= quartiles[2], 1, 0),
+    quartile_2 = ifelse(beds > quartiles[2] & beds <= quartiles[3], 1, 0),
+    quartile_3 = ifelse(beds > quartiles[3] & beds <= quartiles[4], 1, 0),
+    quartile_4 = ifelse(beds > quartiles[4], 1, 0)
+  )
+  average_price <- final.hcris %>%
+  group_by(quartile_1, quartile_2, quartile_3, quartile_4) %>%
+  summarise(
+    avg_price_penalized = mean(price[penalty == 1], na.rm = TRUE),
+    avg_price_non_penalized = mean(price[penalty == 0], na.rm = TRUE)
+  )
+
+print(average_price)
+print(avg_price_penalized)
 
 # 7 ATE 
 # Nearest neighbor matching
