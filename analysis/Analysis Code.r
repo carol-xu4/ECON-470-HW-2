@@ -11,7 +11,7 @@ library(scales)
 # DATA SUMMARY
 
 # 1 How many hospitals filed more than one report in the same year?
-hospital_counts = final.hcris %>%
+hospital_counts = duplicate.hcris %>%
   group_by(fyear) %>%
   count()
         #why are there 16 values in 2007 lol
@@ -20,20 +20,19 @@ hospital_counts_plot = ggplot(hospital_counts, aes(x = fyear, y = n)) +
   geom_line() +
   labs(
     x = "Year",
-    y = "Number of Hospitals",
-    title = "Number of Hospitals per Year") + 
+    y = "Hospital Counts",
+    title = "Number of Unique Hospital Ids") + 
     theme_minimal()
-ggsave("hospital_counts_plot.png")
+ggsave("hospital_counts_plot.png") 
 
-
-# 2 Unique hospital IDs (Medicare provider numbers)
-unique_hospital_ids = final.hcris %>%
+# 2 Unique hospital IDs (Medicare provider numbers) UNGROUP BY YEAR
+unique_hospital_ids = final.hcris %>% ungroup() %>%
   distinct(provider_number) %>%
   n_distinct()
 print(unique_hospital_ids)
-        # There are 48803 unique hospital IDs
+        # There are 6747 unique hospital IDs
 
-# 3 Distribution of total charges per year
+# 3 Distribution of total charges per year, SET LIMIT TO REMOVE OUTLIERS
 charges_distribution = ggplot(final.hcris, aes(x = as.factor(fyear), y = tot_charges)) +
   geom_violin(fill = "skyblue", color = "blue", alpha = 0.6) +
   labs(
@@ -44,7 +43,7 @@ charges_distribution = ggplot(final.hcris, aes(x = as.factor(fyear), y = tot_cha
   theme_minimal()
   ggsave("charges_distribution.png")
 
-# 4 Distribution of estimated prices by year
+# 4 Distribution of estimated prices by year, FILTER OUT OUTLIERS
 final.hcris = final.hcris %>%
         mutate(discount_factor = 1-tot_discounts/tot_charges)
 final.hcris <- final.hcris %>%
@@ -86,13 +85,15 @@ final.hcris %>% group_by(fyear) %>%
 ggsave("avg_prices.png")
 
 # 6 Average price among treated/control groups by bed size quartiles
+# final.hcris %>% filter(is.na(beds)) %>% nrow()
+# true and false for penalty / treatment groups
 quartiles <- quantile(final.hcris$beds, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE)
 final.hcris <- final.hcris %>%
   mutate(
     quartile_1 = ifelse(beds <= quartiles[2], 1, 0),
-    quartile_2 = ifelse(beds > quartiles[2] & beds <= quartiles[3], 1, 0),
-    quartile_3 = ifelse(beds > quartiles[3] & beds <= quartiles[4], 1, 0),
-    quartile_4 = ifelse(beds > quartiles[4], 1, 0)
+    quartile_2 = ifelse(beds = quartiles[2] & beds <= quartiles[3], 1, 0),
+    quartile_3 = ifelse(beds = quartiles[3] & beds <= quartiles[4], 1, 0),
+    quartile_4 = ifelse(beds = quartiles[4], 1, 0)
   )
   average_price <- final.hcris %>%
   group_by(quartile_1, quartile_2, quartile_3, quartile_4) %>%
