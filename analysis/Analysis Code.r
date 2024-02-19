@@ -69,7 +69,6 @@ final.hcris <- final.hcris %>%
 final.hcris <- final.hcris %>%
   mutate(penalty = ifelse(is.na(penalty), 1, penalty))
 
-
 # 5 Average price among penalized vs non-penalized hospitals
 final.hcris %>% group_by(fyear) %>% 
   filter(price_denom>10, !is.na(price_denom), 
@@ -99,11 +98,9 @@ final.hcris <- final.hcris %>%
   group_by(quartile_1, quartile_2, quartile_3, quartile_4) %>%
   summarise(
     avg_price_penalized = mean(price[penalty == 1], na.rm = TRUE),
-    avg_price_non_penalized = mean(price[penalty == 0], na.rm = TRUE)
-  )
+    avg_price_non_penalized = mean(price[penalty == 0], na.rm = TRUE))
 
 print(average_price)
-print(avg_price_penalized)
 
 # 7 ATE 
 # Nearest neighbor matching
