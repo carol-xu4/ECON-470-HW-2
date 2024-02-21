@@ -25,7 +25,8 @@ hospital_counts_plot = ggplot(hospital_counts, aes(x = fyear, y = n)) +
     theme_minimal()
 ggsave("hospital_counts_plot.png") 
 
-# 2 Unique hospital IDs (Medicare provider numbers) UNGROUP BY YEAR
+# 2 Unique hospital IDs (Medicare provider numbers) 
+# UNGROUP BY YEAR
 unique_hospital_ids = final.hcris %>% ungroup() %>%
   distinct(provider_number) %>%
   n_distinct()
@@ -33,75 +34,88 @@ print(unique_hospital_ids)
         # There are 6747 unique hospital IDs
 
 # 3 Distribution of total charges per year, SET LIMIT TO REMOVE OUTLIERS
-charges_distribution = ggplot(final.hcris, aes(x = as.factor(fyear), y = tot_charges)) +
-  geom_violin(fill = "skyblue", color = "blue", alpha = 0.6) +
+charges_distribution <- ggplot(final.hcris.data, aes(x = year, y = tot_charges)) +
+  geom_violin(fill = "skyblue", color = "blue", alpha = 0.6, trim = 0.05) + 
   labs(
-    x = "Year",
-    y = "Total Charges",
-    title = "Distribution of Total Charges by Year"
-  ) +
-  theme_minimal()
+        x = "Year", 
+        y = "Total Charges", 
+        title = "Distribution of Total Charges by Year") + theme_minimal()
   ggsave("charges_distribution.png")
 
 # 4 Distribution of estimated prices by year, FILTER OUT OUTLIERS
-final.hcris = final.hcris %>%
+final.hcris.data = final.hcris.data %>%
         mutate(discount_factor = 1-tot_discounts/tot_charges)
-final.hcris <- final.hcris %>%
+final.hcris.data <- final.hcris.data %>%
   mutate(price_num = (ip_charges + icu_charges + ancillary_charges) * discount_factor - tot_mcare_payment,
     price_denom = tot_discharges - mcare_discharges,
-    price = price_num / price_denom)   
+    price = price_num / price_denom) %>%
+    filter(price >=0)   
 
-estimated_prices_plot = ggplot(final.hcris, aes(x = as.factor(fyear), y = price)) +
-  geom_violin(fill = "skyblue", color = "blue", alpha = 0.6) +
+estimated_prices_plot = ggplot(final.hcris.data, aes(x = as.factor(year), y = price)) +
+  geom_violin(fill = "skyblue", color = "blue") +
   labs(
     x = "Year",
     y = "Estimated Price",
     title = "Distribution of Estimated Prices by Year"
   ) +
   theme_minimal() 
-print(estimated_prices_plot)
 ggsave("estimated_prices_plot.png")
 
 # ATE ESTIMATES
-final.hcris <- final.hcris %>%
-  mutate(penalty = ifelse(price < 0, 1, 0))
-final.hcris <- final.hcris %>%
-  mutate(penalty = ifelse(is.na(penalty), 1, penalty))
+final.hcris.data <- final.hcris.data %>% ungroup() %>%
+  filter(price_denom>100, !is.na(price_denom), 
+         price_num>0, !is.na(price_num),
+         price<100000, 
+         beds>30, year==2012) %>%  
+  mutate( hvbp_payment = ifelse(is.na(hvbp_payment),0,hvbp_payment),
+          hrrp_payment = ifelse(is.na(hrrp_payment),0,abs(hrrp_payment)), 
+    penalty = (hvbp_payment-hrrp_payment<0)) 
 
 # 5 Average price among penalized vs non-penalized hospitals
-final.hcris %>% group_by(fyear) %>% 
-  filter(price_denom>10, !is.na(price_denom), 
-         price_num>0, !is.na(price_num)) %>%  
-  select(price, fyear) %>% 
-  summarize(mean_price=mean(price, na.rm=TRUE)) %>%
-  ggplot(aes(x=as.factor(fyear), y=mean_price)) + 
-  geom_line(aes(group=1)) +
+mean.pen <- round(mean(final.hcris.data$price[which(final.hcris.data$penalty==1)]),2)
+mean.nopen <- round(mean(final.hcris.data$price[which(final.hcris.data$penalty==0)]),2)
+
+avg_prices = final.hcris.data %>%
+  group_by(year, penalty) %>%
+  summarize(mean_price = mean(price, na.rm = TRUE))
+
+avg_prices_plot <- ggplot(avg_prices, aes(x = penalty, y = mean_price, fill = penalty)) +
+  geom_bar(stat = "identity", position = "dodge") +
   labs(
-    x="Year",
-    y="Average Hospital Price",
-    title="Hospital Prices per Year"
+    x = "Penalty Status",
+    y = "Average Hospital Price",
+    title = "Average Hospital Prices by Penalty Status"
   ) +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust=1))
-ggsave("avg_prices.png")
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0))
+ggsave("avg_prices.png", avg_prices_plot)
 
 # 6 Average price among treated/control groups by bed size quartiles
 # final.hcris %>% filter(is.na(beds)) %>% nrow()
 # true and false for penalty / treatment groups
-quartiles <- quantile(final.hcris$beds, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE)
-final.hcris <- final.hcris %>%
+final.hcris.data <- final.hcris.data %>%
+  mutate(quartile = ntile(beds, 4)) %>%
   mutate(
-    quartile_1 = ifelse(beds <= quartiles[2], 1, 0),
-    quartile_2 = ifelse(beds = quartiles[2] & beds <= quartiles[3], 1, 0),
-    quartile_3 = ifelse(beds = quartiles[3] & beds <= quartiles[4], 1, 0),
-    quartile_4 = ifelse(beds = quartiles[4], 1, 0)
-  )
-  average_price <- final.hcris %>%
-  group_by(quartile_1, quartile_2, quartile_3, quartile_4) %>%
-  summarise(
-    avg_price_penalized = mean(price[penalty == 1], na.rm = TRUE),
-    avg_price_non_penalized = mean(price[penalty == 0], na.rm = TRUE))
+    q1 = ifelse(quartile == 1, 1, 0),
+    q2 = ifelse(quartile == 2, 1, 0),
+    q3 = ifelse(quartile == 3, 1, 0),
+    q4 = ifelse(quartile == 4, 1, 0)
+  ) 
 
-print(average_price)
+avg_price_table = final.hcris.data %>%
+  group_by(quartile, penalty) %>%
+  summarize(avg_price = mean(price, na.rm = TRUE))
+avg_price_table = avg_price_table %>%
+        mutate(penalty = ifelse(penalty, "Penalized", "Non-Penalized"))
+print(avg_price_table)
 
 # 7 ATE 
-# Nearest neighbor matching
+# Nearest neighbor matching (1-to-1) with inverse vaiance distance based on bed size quartiles
+
+# Nearest neighbor matching (1-to-1) with Mahalanobis distance based on bed size quartiles
+
+# Inverse propensity weighting, where the propensity scores are based on bed size quartiles
+
+# Simple linear regression, adjusting for quartiles of bed size using dummy variables
+
+
