@@ -1,10 +1,11 @@
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, ggplot2, dplyr, lubridate, stringr, readxl, data.table, gdata)
+pacman::p_load(tidyverse, ggplot2, dplyr, lubridate, stringr, readxl, data.table, gdata, cobalt)
 install.packages("knitr")
 library(knitr)
 library(ggplot2)
 install.packages('scales')
 library(scales)
+
 
 ##Analysis Code
 
@@ -110,12 +111,87 @@ avg_price_table = avg_price_table %>%
 print(avg_price_table)
 
 # 7 ATE 
-# Nearest neighbor matching (1-to-1) with inverse vaiance distance based on bed size quartiles
+install.packages('cobalt')
+library(cobalt)
+
+lp.vars <- final.hcris.data %>% 
+  select(beds, mcaid_discharges, penalty, ip_charges, 
+         mcare_discharges, tot_mcare_payment, price) %>%
+  filter(complete.cases(.))
+lp.covs <- lp.vars %>% select(-c("penalty","price"))
+
+love.plot(bal.tab(lp.covs,treat=lp.vars$penalty), colors="black", shapes="circle", threshold=0.1) + 
+  theme_bw() + theme(legend.position="none")
+
+# Nearest neighbor matching (1-to-1) with inverse variance distance based on bed size quartiles
+install.packages('Matching')
+library(Matching)
+
+lp.covs2 <- lp.covs[, c("beds", "mcaid_discharges")]
+ 
+m.exact <- Matching::Match(Y=lp.vars$price,
+                           Tr=lp.vars$penalty,
+                           X=lp.covs2,
+                           M=1,
+                           exact=TRUE,
+                           estimand="ATE") 
+print(m.exact)
+
+print(ate1)
+
+m.nn.var <- Matching::Match(Y=lp.vars$price,
+                            Tr=lp.vars$penalty,
+                            X=lp.covs,
+                            M=4,  #<<
+                            Weight=1,
+                            estimand="ATE")
+
+m.nn.var2 <- Matching::Match(Y=lp.vars$price,
+                             Tr=lp.vars$penalty,
+                             X=lp.covs,
+                             M=1,   #<<
+                             Weight=1,
+                             estimand="ATE")
+ate1 = m.nn.var2$estimates$ATE
+print(ate1)
+
+v.name=data.frame(new=c("Beds","Medicaid Discharges", "Inaptient Charges",
+                   "Medicare Discharges", "Medicare Payments"))
 
 # Nearest neighbor matching (1-to-1) with Mahalanobis distance based on bed size quartiles
+m.nn.md <- Matching::Match(Y=lp.vars$price,
+                           Tr=lp.vars$penalty,
+                           X=lp.covs,
+                           M=1,
+                           Weight=2,
+                           estimand="ATE")  
+ate2 = m.nn.md$estimates$ATE
+print(ate2)
 
 # Inverse propensity weighting, where the propensity scores are based on bed size quartiles
+logit.model <- glm(penalty ~ beds + mcaid_discharges + ip_charges + mcare_discharges +
+            tot_mcare_payment, family=binomial, data=lp.vars)
+ps <- fitted(logit.model)
+m.nn.ps <- Matching::Match(Y=lp.vars$price,
+                           Tr=lp.vars$penalty,
+                           X=ps,
+                           M=1,
+                           estimand="ATE")
+ate3 = m.nn.ps$estimates$ATE
+print(ate3)
 
 # Simple linear regression, adjusting for quartiles of bed size using dummy variables
+reg.dat <- lp.vars %>% ungroup() %>% filter(complete.cases(.)) %>%
+  mutate(beds_diff = penalty*(beds - mean(beds)),
+         mcaid_diff = penalty*(mcaid_discharges - mean(mcaid_discharges)),
+         ip_diff = penalty*(ip_charges - mean(ip_charges)),
+         mcare_diff = penalty*(mcare_discharges - mean(mcare_discharges)),
+         mpay_diff = penalty*(tot_mcare_payment - mean(tot_mcare_payment)))
+reg <- lm(price ~ penalty + beds + mcaid_discharges + ip_charges + mcare_discharges + tot_mcare_payment + 
+            beds_diff + mcaid_diff + ip_diff + mcare_diff + mpay_diff,
+          data=reg.dat)
+summary(reg)
 
+ate4 = reg$estimates$ATE
+print(ate4)
 
