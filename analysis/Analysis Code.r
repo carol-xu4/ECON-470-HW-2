@@ -22,7 +22,7 @@ hospital_counts_plot = ggplot(hospital_counts, aes(x = fyear, y = n)) +
   labs(
     x = "Year",
     y = "Hospital Counts",
-    title = "Number of Unique Hospital Ids") + 
+    title = "Number of Duplicate Hospital Ids") + 
     theme_minimal()
 ggsave("hospital_counts_plot.png") 
 
@@ -35,7 +35,7 @@ print(unique_hospital_ids)
         # There are 6747 unique hospital IDs
 
 # 3 Distribution of total charges per year, SET LIMIT TO REMOVE OUTLIERS
-charges_distribution <- ggplot(final.hcris.data, aes(x = year, y = tot_charges)) +
+charges_distribution <- ggplot(final.hcris.data, aes(x = as.factor(year), y = tot_charges)) +
   geom_violin(fill = "skyblue", color = "blue", alpha = 0.6, trim = 0.05) + 
   labs(
         x = "Year", 
@@ -89,11 +89,12 @@ avg_prices_plot <- ggplot(avg_prices, aes(x = penalty, y = mean_price, fill = pe
   ) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 0))
-ggsave("avg_prices.png", avg_prices_plot)
+ggsave("avg_prices.png")
+
+print(avg_prices)
 
 # 6 Average price among treated/control groups by bed size quartiles
 # final.hcris %>% filter(is.na(beds)) %>% nrow()
-# true and false for penalty / treatment groups
 final.hcris.data <- final.hcris.data %>%
   mutate(quartile = ntile(beds, 4)) %>%
   mutate(
@@ -111,52 +112,25 @@ avg_price_table = avg_price_table %>%
 print(avg_price_table)
 
 # 7 ATE 
-install.packages('cobalt')
-library(cobalt)
-
-lp.vars <- final.hcris.data %>% 
-  select(beds, mcaid_discharges, penalty, ip_charges, 
-         mcare_discharges, tot_mcare_payment, price) %>%
+lp.vars <- final.hcris.data %>%
+  filter(year == 2012) %>%
+  dplyr::select(q1, q2, q3, q4, penalty, price) %>%
   filter(complete.cases(.))
-lp.covs <- lp.vars %>% select(-c("penalty","price"))
 
-love.plot(bal.tab(lp.covs,treat=lp.vars$penalty), colors="black", shapes="circle", threshold=0.1) + 
-  theme_bw() + theme(legend.position="none")
+lp.covs <- lp.vars %>%
+  dplyr::select(-c("penalty", "price"))
 
 # Nearest neighbor matching (1-to-1) with inverse variance distance based on bed size quartiles
 install.packages('Matching')
 library(Matching)
-
-lp.covs2 <- lp.covs[, c("beds", "mcaid_discharges")]
  
-m.exact <- Matching::Match(Y=lp.vars$price,
-                           Tr=lp.vars$penalty,
-                           X=lp.covs2,
-                           M=1,
-                           exact=TRUE,
-                           estimand="ATE") 
-print(m.exact)
-
-print(ate1)
-
-m.nn.var <- Matching::Match(Y=lp.vars$price,
-                            Tr=lp.vars$penalty,
-                            X=lp.covs,
-                            M=4,  #<<
-                            Weight=1,
-                            estimand="ATE")
-
 m.nn.var2 <- Matching::Match(Y=lp.vars$price,
                              Tr=lp.vars$penalty,
                              X=lp.covs,
-                             M=1,   #<<
+                             M=1,   
                              Weight=1,
                              estimand="ATE")
-ate1 = m.nn.var2$estimates$ATE
-print(ate1)
-
-v.name=data.frame(new=c("Beds","Medicaid Discharges", "Inaptient Charges",
-                   "Medicare Discharges", "Medicare Payments"))
+summary(m.nn.var2)
 
 # Nearest neighbor matching (1-to-1) with Mahalanobis distance based on bed size quartiles
 m.nn.md <- Matching::Match(Y=lp.vars$price,
@@ -165,33 +139,28 @@ m.nn.md <- Matching::Match(Y=lp.vars$price,
                            M=1,
                            Weight=2,
                            estimand="ATE")  
-ate2 = m.nn.md$estimates$ATE
-print(ate2)
+summary(m.nn.md)
 
 # Inverse propensity weighting, where the propensity scores are based on bed size quartiles
-logit.model <- glm(penalty ~ beds + mcaid_discharges + ip_charges + mcare_discharges +
-            tot_mcare_payment, family=binomial, data=lp.vars)
+logit.model <- glm(penalty ~ q1 + q2+ q3 + q4, family=binomial, data=lp.vars)
 ps <- fitted(logit.model)
 m.nn.ps <- Matching::Match(Y=lp.vars$price,
                            Tr=lp.vars$penalty,
                            X=ps,
                            M=1,
                            estimand="ATE")
-ate3 = m.nn.ps$estimates$ATE
-print(ate3)
+summary(m.nn.ps)
 
 # Simple linear regression, adjusting for quartiles of bed size using dummy variables
-reg.dat <- lp.vars %>% ungroup() %>% filter(complete.cases(.)) %>%
-  mutate(beds_diff = penalty*(beds - mean(beds)),
-         mcaid_diff = penalty*(mcaid_discharges - mean(mcaid_discharges)),
-         ip_diff = penalty*(ip_charges - mean(ip_charges)),
-         mcare_diff = penalty*(mcare_discharges - mean(mcare_discharges)),
-         mpay_diff = penalty*(tot_mcare_payment - mean(tot_mcare_payment)))
-reg <- lm(price ~ penalty + beds + mcaid_discharges + ip_charges + mcare_discharges + tot_mcare_payment + 
-            beds_diff + mcaid_diff + ip_diff + mcare_diff + mpay_diff,
-          data=reg.dat)
+reg <- lm(price ~ penalty + q1 + q2 + q3 + q4,
+          data=lp.vars)
 summary(reg)
 
-ate4 = reg$estimates$ATE
-print(ate4)
-
+# table
+method <- c("Nearest neighbor matching with inverse variance distance", 
+            "Nearest neighbor matching with Mahalanobis distance", 
+            "Inverse propensity weighting based on bed size", 
+            "Simple linear regression adjusting for bed size")
+ATE <- c(199.53, 199.53, 199.53, 183.5)
+ate_table = data.frame(Method = method, ATE = ATE)
+print(ate_table)
